@@ -1,0 +1,981 @@
+\documentclass{article} 
+\usepackage{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
+
+%% ODER: format ==         = "\mathrel{==}"
+%% ODER: format /=         = "\neq "
+%
+%
+\makeatletter
+\@ifundefined{lhs2tex.lhs2tex.sty.read}%
+  {\@namedef{lhs2tex.lhs2tex.sty.read}{}%
+   \newcommand\SkipToFmtEnd{}%
+   \newcommand\EndFmtInput{}%
+   \long\def\SkipToFmtEnd#1\EndFmtInput{}%
+  }\SkipToFmtEnd
+
+\newcommand\ReadOnlyOnce[1]{\@ifundefined{#1}{\@namedef{#1}{}}\SkipToFmtEnd}
+\usepackage{amstext}
+\usepackage{amssymb}
+\usepackage{stmaryrd}
+\DeclareFontFamily{OT1}{cmtex}{}
+\DeclareFontShape{OT1}{cmtex}{m}{n}
+  {<5><6><7><8>cmtex8
+   <9>cmtex9
+   <10><10.95><12><14.4><17.28><20.74><24.88>cmtex10}{}
+\DeclareFontShape{OT1}{cmtex}{m}{it}
+  {<-> ssub * cmtt/m/it}{}
+\newcommand{\texfamily}{\fontfamily{cmtex}\selectfont}
+\DeclareFontShape{OT1}{cmtt}{bx}{n}
+  {<5><6><7><8>cmtt8
+   <9>cmbtt9
+   <10><10.95><12><14.4><17.28><20.74><24.88>cmbtt10}{}
+\DeclareFontShape{OT1}{cmtex}{bx}{n}
+  {<-> ssub * cmtt/bx/n}{}
+\newcommand{\tex}[1]{\text{\texfamily#1}}	% NEU
+
+\newcommand{\Sp}{\hskip.33334em\relax}
+
+
+\newcommand{\Conid}[1]{\mathit{#1}}
+\newcommand{\Varid}[1]{\mathit{#1}}
+\newcommand{\anonymous}{\kern0.06em \vbox{\hrule\@width.5em}}
+\newcommand{\plus}{\mathbin{+\!\!\!+}}
+\newcommand{\bind}{\mathbin{>\!\!\!>\mkern-6.7mu=}}
+\newcommand{\rbind}{\mathbin{=\mkern-6.7mu<\!\!\!<}}% suggested by Neil Mitchell
+\newcommand{\sequ}{\mathbin{>\!\!\!>}}
+\renewcommand{\leq}{\leqslant}
+\renewcommand{\geq}{\geqslant}
+\usepackage{polytable}
+
+%mathindent has to be defined
+\@ifundefined{mathindent}%
+  {\newdimen\mathindent\mathindent\leftmargini}%
+  {}%
+
+\def\resethooks{%
+  \global\let\SaveRestoreHook\empty
+  \global\let\ColumnHook\empty}
+\newcommand*{\savecolumns}[1][default]%
+  {\g@addto@macro\SaveRestoreHook{\savecolumns[#1]}}
+\newcommand*{\restorecolumns}[1][default]%
+  {\g@addto@macro\SaveRestoreHook{\restorecolumns[#1]}}
+\newcommand*{\aligncolumn}[2]%
+  {\g@addto@macro\ColumnHook{\column{#1}{#2}}}
+
+\resethooks
+
+\newcommand{\onelinecommentchars}{\quad-{}- }
+\newcommand{\commentbeginchars}{\enskip\{-}
+\newcommand{\commentendchars}{-\}\enskip}
+
+\newcommand{\visiblecomments}{%
+  \let\onelinecomment=\onelinecommentchars
+  \let\commentbegin=\commentbeginchars
+  \let\commentend=\commentendchars}
+
+\newcommand{\invisiblecomments}{%
+  \let\onelinecomment=\empty
+  \let\commentbegin=\empty
+  \let\commentend=\empty}
+
+\visiblecomments
+
+\newlength{\blanklineskip}
+\setlength{\blanklineskip}{0.66084ex}
+
+\newcommand{\hsindent}[1]{\quad}% default is fixed indentation
+\let\hspre\empty
+\let\hspost\empty
+\newcommand{\NB}{\textbf{NB}}
+\newcommand{\Todo}[1]{$\langle$\textbf{To do:}~#1$\rangle$}
+
+\EndFmtInput
+\makeatother
+%
+
+
+\begin{document} 
+
+\title{Monads are Trees with Grafting}
+\author{Dan Piponi\\\href{http://blog.sigfpe.com}{A Neighborhood of Infinity}}
+\maketitle
+
+\section{Goals and Prerequisites}
+This article is intended to give an elementary introduction to an aspect of monads not covered in most introductions. The reader is expected to know some basics of Haskell, for example what a type class is and what a lambda term is. They are also expected to be familiar with the usual notion of a tree from computer science. No category theory mentioned anywhere but in this sentence.
+
+The original \href{https://dl.dropbox.com/u/828035/Monads/monads.lhs}{source code} to this document is written in literate Haskell and can be executed with ghc.
+
+\section{Trees}
+Haskell type classes are interfaces shared by different types, and Haskell's \ensuremath{\Conid{Monad}} type class is no different. It describes an interface common to many types of tree structure, all of which share the notion of a {\em leaf node} and {\em grafting}.
+
+Let's start by looking at the type class definition:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{class}\;\Conid{Monad}\;\Varid{m}\;\mathbf{where}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{return}\mathbin{::}\Varid{a}\to \Varid{m}\;\Varid{a}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}(\bind )\mathbin{::}\Varid{m}\;\Varid{a}\to (\Varid{a}\to \Varid{m}\;\Varid{b})\to \Varid{m}\;\Varid{b}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Here \ensuremath{\Varid{m}} is a type constructor. Given a type \ensuremath{\Varid{a}}, \ensuremath{\Varid{m}\;\Varid{a}} is a new type with these two functions. We can make an instance of this class by defining a binary tree type:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{data}\;\Conid{Tree}\;\Varid{a}\mathrel{=}\Conid{Fork}\;(\Conid{Tree}\;\Varid{a})\;(\Conid{Tree}\;\Varid{a})\mid \Conid{Leaf}\;\Varid{a}\mid \Conid{Nil}\;\mathbf{deriving}\;\Conid{Show}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+\ensuremath{\Conid{Tree}} takes a type \ensuremath{\Varid{a}} and makes a new type from it \ensuremath{\Conid{Tree}\;\Varid{a}}. Elements of type \ensuremath{\Conid{Tree}\;\Varid{a}} are either forks with two subtrees, leaves containing a single element of type \ensuremath{\Varid{a}}, or empty trees called \ensuremath{\Conid{Nil}}.
+
+Here's a typical expression representing a tree:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{tree1}\mathrel{=}\Conid{Fork}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}(\Conid{Fork}\;(\Conid{Leaf}\;\mathrm{2})\;\Conid{Nil}){}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}(\Conid{Fork}\;(\Conid{Leaf}\;\mathrm{2})\;(\Conid{Leaf}\;\mathrm{3})){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+We can draw this in the standard way:
+
+\tikzstyle{leaf} = [draw, fill=green!20, 
+    text centered, rounded corners, minimum height=1em]
+\tikzstyle{nonleaf} = []
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        child {node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{2}}}}
+        child {node[nonleaf] {\ensuremath{\Conid{Nil}}}}
+    }
+    child {
+        child {node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{2}}}}
+        child {node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{3}}}}
+    };
+\end{tikzpicture}
+\end{center}
+
+Although there are two different kinds of terminal node, \ensuremath{\Conid{Leaf}}s and \ensuremath{\Conid{Nil}}s, our interest will be focussed on the \ensuremath{\Conid{Leaf}}s.
+
+To show how the monad interface works we can start defining a \ensuremath{\Conid{Monad}} instance for \ensuremath{\Conid{Tree}}:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{instance}\;\Conid{Monad}\;\Conid{Tree}\;\mathbf{where}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{return}\;\Varid{a}\mathrel{=}\Conid{Leaf}\;\Varid{a}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+The function \ensuremath{\Varid{return}}, despite the name, is nothing more than a function for creating \ensuremath{\Conid{Leaf}} nodes. The next function is a grafting operation:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{15}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[5]{}\Conid{Nil}{}\<[15]%
+\>[15]{}\bind \Varid{f}\mathrel{=}\Conid{Nil}{}\<[E]%
+\\
+\>[5]{}\Conid{Leaf}\;\Varid{a}{}\<[15]%
+\>[15]{}\bind \Varid{f}\mathrel{=}\Varid{f}\;\Varid{a}{}\<[E]%
+\\
+\>[5]{}\Conid{Fork}\;\Varid{u}\;\Varid{v}{}\<[15]%
+\>[15]{}\bind \Varid{f}\mathrel{=}\Conid{Fork}\;(\Varid{u}\bind \Varid{f})\;(\Varid{v}\bind \Varid{f}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+The idea is that given a tree we'll replace every leaf node with a new subtree. We need a scheme to be able to specify what trees we are grafting in to replace which leaves. One way to do this is like this: we'll use the value stored in the leaf to specify what tree to graft in its place, and we'll make the specification by giving a function mapping leaf values to trees. I'll illustrate it pictorially first, with a simple tree. Consider:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{tree2}\mathrel{=}\Conid{Fork}\;(\Conid{Leaf}\;\mathrm{2})\;(\Conid{Leaf}\;\mathrm{3}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{2}}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{3}}}
+    };
+\end{tikzpicture}
+\end{center}
+
+Now I want to graft these two trees into \ensuremath{\Varid{tree2}} so that the left one replaces \ensuremath{\Conid{Leaf}\;\mathrm{2}} and the right one replaces \ensuremath{\Conid{Leaf}\;\mathrm{3}}:
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=1.25in]
+\coordinate
+    child {
+        node[nonleaf] {\ensuremath{\Conid{Nil}}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\text{\tt \char34 Two\char34}}}
+    };
+
+\begin{scope}[xshift = 6cm]
+\tikzstyle{level 1}=[sibling distance=1.25in]
+\coordinate
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\text{\tt \char34 Three\char34}}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\text{\tt \char34 x\char34}}}
+    };
+\end{scope}
+
+\end{tikzpicture}
+\end{center}
+
+The result should be:
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        child {node[nonleaf] {\ensuremath{\Conid{Nil}}}}
+        child {node[leaf] {\ensuremath{\Conid{Leaf}\;\text{\tt \char34 Two\char34}}}}
+    }
+    child {
+        child {node[leaf] {\ensuremath{\Conid{Leaf}\;\text{\tt \char34 Three\char34}}}}
+        child {node[leaf] {\ensuremath{\Conid{Leaf}\;\text{\tt \char34 x\char34}}}}
+    };
+\end{tikzpicture}
+\end{center}
+
+We carry this out by writing a function that maps \ensuremath{\mathrm{2}} to the left tree and \ensuremath{\mathrm{3}} to the right tree. Here's such a function:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{f}\;\mathrm{2}\mathrel{=}\Conid{Fork}\;\Conid{Nil}\;(\Conid{Leaf}\;\text{\tt \char34 Two\char34}){}\<[E]%
+\\
+\>[3]{}\Varid{f}\;\mathrm{3}\mathrel{=}\Conid{Fork}\;(\Conid{Leaf}\;\text{\tt \char34 Three\char34})\;(\Conid{Leaf}\;\text{\tt \char34 String\char34}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+We can now graft our tree using:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{tree3}\mathrel{=}\Varid{tree2}\bind \Varid{f}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+I hope you can see that the implementation of \ensuremath{\bind } does nothing more than recursively walk the tree looking for leaf nodes to graft.
+
+Instances of \ensuremath{\Conid{Monad}} can be viewed as trees similar to this.
+
+\section{Computations}
+\begin{quote}
+``Monads turn control flow into data flow, where it can be constrained by the type system.'' — Oleg Kiselyov
+\end{quote}
+If this interface were merely for building tree structures it wouldn't be all that interesting. Where it starts to get useful is when we use trees to represent different ways to organise a computation. For example, consider the kind of combinatorial search involved in finding the best move in a game. Or consider decision-tree flowcharts or probability trees. Even simple ordered linear sequences of operations form a kind of degenerate tree without branching. The monad interface can be used with all of these structures giving a uniform way of working with them.
+
+\section{Combinatorial Search}
+Let's start by putting the \ensuremath{\Conid{Tree}} example above to work. Combinatorial search trees can quickly grow too large to fit on a page so I'm deliberately going to pick a particularly simple problem to solve so that every part of it can be laid bare.
+
+Let S be the set $\{2,5\}$ and suppose we wish to find all of the possible ways we can form the sum of three numbers chosen from this set (with possible repeats). For example $2+5+2$ or $5+5+5$. We can break this problem down into three stages, picking a number at each stage. We can draw a diagram representing the possibilities as follows:
+
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{2}}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{5}}}
+    };
+\end{tikzpicture}
+\end{center}
+The Haskell code is:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{tree4}\mathrel{=}\Conid{Fork}\;(\Varid{return}\;\mathrm{2})\;(\Varid{return}\;\mathrm{5}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Now we wish to construct the tree for the next stage. We want to replace the left node with a subtree that represents the two possibilities we might get given that we picked $2$ at the first stage. Similarly we want to replace the right leaf with the possibilities that start with $5$. In other words, in both cases we want to replace \ensuremath{\Conid{Leaf}\;\Varid{n}} with the tree
+
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;(\Varid{n}\mathbin{+}\mathrm{2})}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;(\Varid{n}\mathbin{+}\mathrm{5})}}
+    };
+\end{tikzpicture}
+\end{center}
+In other words, we want to graft with the function
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{choose}\;\Varid{n}\mathrel{=}\Conid{Fork}\;(\Conid{Leaf}\;(\Varid{n}\mathbin{+}\mathrm{2}))\;(\Conid{Leaf}\;(\Varid{n}\mathbin{+}\mathrm{5})){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Our two stage tree is given by
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{stage2}\mathrel{=}\Varid{tree4}\bind \Varid{choose}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Now we want to replace each of these leaf nodes with a new subtree. We can reuse our rule to get
+
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_1\mathrel{=}\Varid{stage2}\bind \Varid{choose}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+If you run the code you'll see that \ensuremath{\mathop{stage3}_1} has all of the possibilities stored in the tree and we have solved our problem.
+
+
+We can reorganise this code a little. A helper \ensuremath{\mathop{fork}_1} function saves on typing:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{fork}_1\;\Varid{a}\;\Varid{b}\mathrel{=}\Conid{Fork}\;(\Conid{Leaf}\;\Varid{a})\;(\Conid{Leaf}\;\Varid{b}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+I've implemented \ensuremath{\Varid{choose}} as a separate function but we could write out everything longhand as follows:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{16}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{35}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_2\mathrel{=}(\mathop{fork}_1\;\mathrm{2}\;\mathrm{5}{}\<[35]%
+\>[35]{}\bind \lambda \Varid{a}\to {}\<[E]%
+\\
+\>[3]{}\hsindent{13}{}\<[16]%
+\>[16]{}\mathop{fork}_1\;(\Varid{a}\mathbin{+}\mathrm{2})\;(\Varid{a}\mathbin{+}\mathrm{5})){}\<[35]%
+\>[35]{}\bind \lambda \Varid{b}\to {}\<[E]%
+\\
+\>[3]{}\hsindent{13}{}\<[16]%
+\>[16]{}\mathop{fork}_1\;(\Varid{b}\mathbin{+}\mathrm{2})\;(\Varid{b}\mathbin{+}\mathrm{5}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+I've simply substituted lambda terms for the function \ensuremath{\Varid{choose}}. We can now see the three stages clearly as one line after another. We can read this code from top to bottom as a sequence of three operations interpreting the \ensuremath{\mathop{fork}_1} function as something like the Unix \ensuremath{\mathop{fork}_1} function. After a fork, the remainder of the lines of code are executed {\em twice}, each time using a different value. Writing it out fully makes it clear that we can easily change the choice at each line, for example to use sets other than $\{2, 5\}$.
+
+An important thing to notice about our three stage tree is that there were two ways of building it. I first built a two stage tree and then grafted a one stage tree into each of its leaves. But I could have built a one stage tree and substituted a two stage tree into each of its leaves.
+
+Our alternative code looks like this:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{15}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{33}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_3\mathrel{=}\mathop{fork}_1\;\mathrm{2}\;\mathrm{5}{}\<[33]%
+\>[33]{}\bind \lambda \Varid{a}\to {}\<[E]%
+\\
+\>[3]{}\hsindent{12}{}\<[15]%
+\>[15]{}\mathop{fork}_1\;(\Varid{a}\mathbin{+}\mathrm{2})\;(\Varid{a}\mathbin{+}\mathrm{5}){}\<[33]%
+\>[33]{}\bind \lambda \Varid{b}\to {}\<[E]%
+\\
+\>[3]{}\hsindent{12}{}\<[15]%
+\>[15]{}\mathop{fork}_1\;(\Varid{b}\mathbin{+}\mathrm{2})\;(\Varid{b}\mathbin{+}\mathrm{5}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+It's almost the same, I just removed a pair of parentheses.
+
+We can try to step back a bit and think about what that code means. Each time we see \ensuremath{\mathbin{...}\bind \lambda \Varid{a}\to \mathbin{...}} we can think of \ensuremath{\Varid{a}} as a handle onto the leaves of the tree on the left and the tree on the right is what those leaves get replaced with. If we're going to do lots of grafting with lambda terms like this then it'd be nice to have special syntax. This is exactly what Haskell \ensuremath{\mathbf{do}}-notation provides. After a \ensuremath{\mathbf{do}}, this fragment of code can be written as
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[5]{}\Varid{a}\leftarrow \mathbin{...}{}\<[E]%
+\\
+\>[5]{}\mathbin{...}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+So we can rewrite our code yet again as
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_4\mathrel{=}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\leftarrow \mathop{fork}_1\;\mathrm{2}\;\mathrm{5}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{b}\leftarrow \mathop{fork}_1\;(\Varid{a}\mathbin{+}\mathrm{2})\;(\Varid{a}\mathbin{+}\mathrm{5}){}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mathop{fork}_1\;(\Varid{b}\mathbin{+}\mathrm{2})\;(\Varid{b}\mathbin{+}\mathrm{5}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Now it really is looking like imperative code with a Unix-like fork function. We have a very straightforward interpretation of \ensuremath{\mathbf{do}} notation. The line
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{a}\leftarrow \mathbin{...}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+means exactly this: using \ensuremath{\Varid{a}} to represent the value in the leaf, replace all of the leaves on the right hand side with the tree defined by the rest of this \ensuremath{\mathbf{do}} block. The sequence of lines in a \ensuremath{\mathbf{do}} block are a sequence of operations to graft subtrees one below the other.
+
+\section{The Monad Laws}
+There are some properties that we can expect to hold for all trees. The first of these is this: if we graft with the rule \ensuremath{\lambda \Varid{a}\to \Varid{return}\;\Varid{a}} then we're just replacing a leaf with itself. This rule is the first {\em monad law} and a monad isn't a monad unless it holds. We can write it using \ensuremath{\mathbf{do}} notation as:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{x}\equiv \mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\leftarrow \Varid{x}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{return}\;\Varid{a}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+That was a rule for grafting \ensuremath{\lambda \Varid{a}\to \Varid{return}\;\Varid{a}} into a tree. We can also consider grafting a subtree into a single leaf. This should simply replace the leaf with the tree with no trace of the leaf left behind. So we get the second monad law:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\leftarrow \Varid{return}\;\Varid{a}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{f}\;\Varid{a}{}\<[E]%
+\\
+\>[3]{}\equiv {}\<[E]%
+\\
+\>[3]{}\Varid{f}\;\Varid{a}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Consider again the two ways of grafting the three stage combinatorial search tree we built above. That again can be expressed purely in the language of monads making no specific reference to the \ensuremath{\Conid{Tree}} type. It is:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}c<{\hspost}@{}}%
+\column{3E}{@{}l@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{9}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{do}{}\<[3E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{y}\leftarrow \mathbf{do}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\Varid{x}\leftarrow \Varid{m}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\Varid{f}\;\Varid{x}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{g}\;\Varid{y}{}\<[E]%
+\\
+\>[3]{}\equiv {}\<[3E]%
+\\
+\>[3]{}\mathbf{do}{}\<[3E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{x}\leftarrow \Varid{m}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{y}\leftarrow \Varid{f}\;\Varid{x}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{g}\;\Varid{y}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+The first expression builds a two stage tree \ensuremath{\Varid{y}} and then grafts into that using the function \ensuremath{\Varid{g}}. The second expression grafts a two stage tree directly into the tree \ensuremath{\Varid{m}}. We'd expect this to hold for any kind of tree and it is known as the third monad law.
+
+The monad laws just express the property that \ensuremath{\bind } is intended to act like tree grafting.
+
+\section{Reduced Trees}
+Suppose we used the \ensuremath{\Conid{Tree}} monad to perform a combinatorial search and it resulted in the tree
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Conid{Fork}\;(\Conid{Leaf}\;\mathrm{1})\;(\Conid{Fork}\;(\Conid{Leaf}\;\mathrm{2})\;(\Conid{Leaf}\;\mathrm{3})){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Chances are, this contains more information than we needed. If we only need the leaf values, $1$, $2$ and $3$ then have no need for the tree structure. We could write a function to run through our tree extracting all of the values from it:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{runTree}\mathbin{::}\Conid{Tree}\;\Varid{a}\to [\mskip1.5mu \Varid{a}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\Varid{runTree}\;\Conid{Nil}\mathrel{=}[\mskip1.5mu \mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\Varid{runTree}\;(\Conid{Leaf}\;\Varid{a})\mathrel{=}[\mskip1.5mu \Varid{a}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\Varid{runTree}\;(\Conid{Fork}\;\Varid{a}\;\Varid{b})\mathrel{=}\Varid{runTree}\;\Varid{a}\plus \Varid{runTree}\;\Varid{b}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+It seems a little inefficient to build a tree and then discard it at the end. It would be more efficient to build the list directly as we go along and never make an intermediate tree. Another way to look at it is to consider that a list is itself a type of tree. You can think of the list elements as being the children of a root, but that the children have no children of their own. Here's a picture of the list \ensuremath{[\mskip1.5mu \mathrm{1},\mathrm{2},\mathrm{3}\mskip1.5mu]}:
+
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{1}}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{2}}}
+    }
+    child {
+        node[leaf] {\ensuremath{\Conid{Leaf}\;\mathrm{2}}}
+    };
+\end{tikzpicture}
+\end{center}
+
+The problem now is that grafting seems like it ought to make the tree deeper, but then it'd no longer be a simple list. The solution is to define grafting for lists in such a way that the resulting tree is flattened back out again. So a tree like
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=2in]
+\tikzstyle{level 2}=[sibling distance=1in]
+\coordinate
+    child {
+        child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{1}} } }
+        child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{2}} } }
+    }
+    child {
+        child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{3}} } }
+        child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{4}} } }
+    }
+    child {
+        child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{5}} } }
+        child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{6}} } }
+    };
+\end{tikzpicture}
+\end{center}
+should be immediately flattened out to
+\begin{center}
+\begin{tikzpicture}
+\tikzstyle{level 1}=[sibling distance=1in]
+\coordinate
+    child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{1}} } }
+    child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{2}} } }
+    child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{3}} } }
+    child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{4}} } }
+    child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{5}} } }
+    child { node[leaf] { \ensuremath{\Conid{Leaf}\;\mathrm{6}} } };
+\end{tikzpicture}
+\end{center}
+
+We can implement this as follows:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{15}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{instance}\;\Conid{Monad}\;[\mskip1.5mu \mskip1.5mu]\;\mathbf{where}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{return}\;\Varid{a}{}\<[15]%
+\>[15]{}\mathrel{=}[\mskip1.5mu \Varid{a}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\bind \Varid{f}{}\<[15]%
+\>[15]{}\mathrel{=}\Varid{concat}\;(\Varid{map}\;\Varid{f}\;\Varid{a}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Our leaves are simply singleton lists, and the grafting operation temporarily makes a deeper list of lists that is flattened out to a single list using \ensuremath{\Varid{concat}}.
+
+Now we can reimplement \ensuremath{\mathop{fork}_1} as
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{fork}_2\;\Varid{a}\;\Varid{b}\mathrel{=}[\mskip1.5mu \Varid{a},\Varid{b}\mskip1.5mu]{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+and reimplement our search:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_5\mathrel{=}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\leftarrow \mathop{fork}_2\;\mathrm{2}\;\mathrm{5}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{b}\leftarrow \mathop{fork}_2\;(\Varid{a}\mathbin{+}\mathrm{2})\;(\Varid{a}\mathbin{+}\mathrm{5}){}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mathop{fork}_2\;(\Varid{b}\mathbin{+}\mathrm{2})\;(\Varid{b}\mathbin{+}\mathrm{5}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+We don't need the \ensuremath{\mathop{fork}_1} function. we could have simply written:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_6\mathrel{=}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\leftarrow [\mskip1.5mu \mathrm{2},\mathrm{5}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{b}\leftarrow [\mskip1.5mu \Varid{a}\mathbin{+}\mathrm{2},\Varid{a}\mathbin{+}\mathrm{5}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}[\mskip1.5mu \Varid{b}\mathbin{+}\mathrm{2},\Varid{b}\mathbin{+}\mathrm{5}\mskip1.5mu]{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Of course we can now put more than two elements into those lists for more complex searches.
+But there's one more transformation I want to perform on this code:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathop{stage3}_7\mathrel{=}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{a}\leftarrow [\mskip1.5mu \mathrm{2},\mathrm{5}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{b}\leftarrow [\mskip1.5mu \mathrm{2},\mathrm{5}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{c}\leftarrow [\mskip1.5mu \mathrm{2},\mathrm{5}\mskip1.5mu]{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{return}\;(\Varid{a}\mathbin{+}\Varid{b}\mathbin{+}\Varid{c}){}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+I hope you can see how this works. The last two lines build a list parameterised by the values \ensuremath{\Varid{a}} and \ensuremath{\Varid{b}}. That list is grafted into the list made at the \ensuremath{\Varid{b}\leftarrow \mathbin{...}} line. And that list is grafted into the list made at the \ensuremath{\Varid{a}\leftarrow \mathbin{...}} line.
+
+There's another way of looking at this code. It's a lot like imperative code. For example the Python
+\begin{tabbing}\tt
+~results~\char61{}~\char91{}\char93{}\\
+\tt ~for~a~in~\char91{}2\char44{}~5\char93{}\char58{}\\
+\tt ~~~for~b~in~\char91{}2\char44{}~5\char93{}\char58{}\\
+\tt ~~~~~~~for~c~in~\char91{}2\char44{}~5\char93{}\char58{}\\
+\tt ~~~~~~~~~~~results\char46{}append\char40{}a\char43{}b\char43{}c\char41{}
+\end{tabbing}
+This is a common characteristic of many types of monad: we build a tree structure that represents a computation (for example, an imperative one with loops) and then interpret it using something like \ensuremath{\Varid{runTree}}. In many cases we can do the interpretation as we go along and so we don't need a separate interpretation step at the end, as we just did with lists.
+
+\section{Flowcharts and State}
+To illustrate how flexible monads are we'll now look at a completely different type of tree structure that also represents a type of computation and that also shares the \ensuremath{\Conid{Monad}} interface.
+
+Here's a familiar kind of flowchart:
+
+\tikzstyle{decision} = [diamond, draw, fill=blue!20, 
+    text width=4em, text badly centered, node distance=3cm, inner sep=0pt]
+\tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    text width=6em, text centered, rounded corners, minimum height=3em]
+\tikzstyle{line} = [draw, -latex']
+
+\begin{center}
+\begin{tikzpicture}[node distance = 3cm, auto]
+\node[decision] (a) { \ensuremath{\Varid{get}} };
+\node[block, below left of = a] (b) { \ensuremath{\Varid{put}\;\Conid{True}} };
+\node[block, below right of = a] (c) { \ensuremath{\Varid{put}\;\Conid{False}} };
+\node[block, below of = b] (d) { \ensuremath{\Varid{return}\;\text{\tt \char34 No\char34}} };
+\node[block, below of = c] (e) { \ensuremath{\Varid{return}\;\text{\tt \char34 Yes\char34}} };
+\path[line] (a.west) -| node[near start, above] { \ensuremath{\Conid{False}} } (b.north);
+\path[line] (a.east) -| node[near start, above] { \ensuremath{\Conid{True}} } (c.north);
+\path[line] (b.south) -- (d.north);
+\path[line] (c.south) -- (e.north);
+\end{tikzpicture}
+\end{center}
+
+For now I want to concentrate on how we build these trees and then later talk about actually getting them to perform an action.
+
+The idea now is that we have a mutable state variable of some type and nodes to set and get this state. The \ensuremath{\Varid{put}} function represents putting its argument into the state. The \ensuremath{\Varid{get}} function is used to represent getting data from the current state, selecting a branch below according to its value. We also have leaf nodes representing the final value of our computation. With the list monad, a branching tree meant executing all branches. With the \ensuremath{\Conid{State}} monad we'll just execute one branch at any branch point, the one corresponding to the value in the state at that point.
+
+More precisely, we have a type constructor \ensuremath{\Conid{State}} that builds a flowchart tree type, \ensuremath{\Conid{State}\;\Varid{s}\;\Varid{a}}, from two types, \ensuremath{\Varid{s}} and \ensuremath{\Varid{a}}. \ensuremath{\Varid{s}} is the type of the state, and \ensuremath{\Varid{a}} is the type of the leaf nodes. We also have two functions, not part of the monad interface, that we can use to construct flowcharts. \ensuremath{\Varid{put}\mathbin{::}\Varid{s}\to \Conid{State}\;\Varid{s}\;()} builds a tree that looks like this:
+
+\begin{center}
+\begin{tikzpicture}[node distance = 3cm, auto]
+\node[block] (a) { \ensuremath{\Varid{put}\;\Varid{x}} };
+\node[block, below of = a] (b) { \ensuremath{\Varid{return}\;()} };
+\path[line] (a.south) -- (b.north);
+\end{tikzpicture}
+\end{center}
+
+This tree represents storing the value \ensuremath{\Varid{x}} in our state. \ensuremath{()} is an element of the type with one element, also called \ensuremath{()}. You can ignore this value, it's just there so that we have a leaf node suitable for grafting.
+
+We also have \ensuremath{\Varid{get}} nodes. In the first flowchart example of this section I illustrated state of type \ensuremath{\Conid{Bool}} so we only needed a two way branch. More generally we have state of type \ensuremath{\Varid{s}} and to cover them all we need infinitely many branches, and for each branch we have a leaf whose value corresponds to the branch selected by the current state. So, for example, \ensuremath{\Varid{get}\mathbin{::}\Conid{State}\;\Varid{s}\;\Varid{s}} can be thought of as looking like
+
+\begin{center}
+\begin{tikzpicture}[node distance = 3cm, auto]
+\node[decision] (a) { \ensuremath{\Varid{get}} };
+
+\node[block, below of = a] (b) { \ensuremath{\Varid{return}\;\mathrm{0}} };
+\path[line] (a.south) -- node[left] {\ensuremath{\mathrm{0}}} (b.north);
+
+\node[block, left of = b] (c) { \ensuremath{\Varid{return}\;(\mathbin{-}\mathrm{1})} };
+\path[line] (a.south) -- node[above] {\ensuremath{\mathbin{-}\mathrm{1}}} (c.north);
+
+\node[left of = c] (e) { $\ldots$ };
+
+\node[block, right of = b] (e) { \ensuremath{\Varid{return}\;\mathrm{1}} };
+\path[line] (a.south) -- node[below] {\ensuremath{\mathrm{1}}} (e.north);
+
+\node[block, right of = e] (f) { \ensuremath{\Varid{return}\;\mathrm{2}} };
+\path[line] (a.south) -- node {\ensuremath{\mathrm{2}}} (f.north);
+
+\node[right of = f] (g) { $\ldots$ };
+\end{tikzpicture}
+\end{center}
+
+The labels emerging from the \ensuremath{\Varid{get}} specify which branch is taken as a function of the state. The \ensuremath{\Varid{get}} function builds this entire thing for us, including the infinity of leaves. (Though I've also used \ensuremath{\Varid{get}} to label just the branch diamond in its own.) This could get a little unwieldy so it's easier to draw all of the branches emerging from the \ensuremath{\Varid{get}} by a scheme like:
+
+\begin{center}
+\begin{tikzpicture}[node distance = 3cm, auto]
+\node[decision] (a) { \ensuremath{\Varid{get}} };
+
+\node[block, below of = a] (b) { \ensuremath{\Varid{return}\;\Varid{s}} };
+\path[line] (a.south) -- node[left] {\ensuremath{\Varid{s}}} (b.north);
+\end{tikzpicture}
+\end{center}
+
+Let's consider an example. We'll construct a block of code which has \ensuremath{\Conid{Integer}} valued state. If the state is odd then it'll add one to it and return the string \ensuremath{\text{\tt \char34 odd\char34}}, otherwise it just returns the string \ensuremath{\text{\tt \char34 even\char34}}. We can draw this as a flowchart:
+
+\begin{center}
+\begin{tikzpicture}[node distance = 3cm, auto]
+\node[decision] (a) { \ensuremath{\Varid{get}} };
+
+\node[block, below left of = a] (b) { \ensuremath{\Varid{return}\;\text{\tt \char34 even\char34}} };
+\path[line] (a.west) -| node[above] {\ensuremath{\Varid{s}\;\Varid{even}}} (b.north);
+
+\node[block, below right of = a] (c) { \ensuremath{\Varid{put}\;(\Varid{s}\mathbin{+}\mathrm{1})} };
+\node[block, below of = c] (d) { \ensuremath{\Varid{return}\;\text{\tt \char34 odd\char34}} };
+\path[line] (a.east) -| node[above] {\ensuremath{\Varid{s}\;\Varid{odd}}} (c.north);
+\path[line] (c.south) -- (d.north);
+\end{tikzpicture}
+\end{center}
+
+Note that though we have drawn two branches we are still representing an infinite number of branches. All of the branches corresponding to even values returned by \ensuremath{\Varid{get}} are going to the left and the rest are going to the right. We'll need a selective grafting rule that grafts one thing for even values and another for odd values. We can start with
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{get}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+which simply gives us a tree with leaves corresponding to the value of the state. Now we want to graft a simple leaf containing a string on the left.
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{9}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{11}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{s}\leftarrow \Varid{get}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mathbf{if}\;\Varid{even}\;\Varid{s}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\mathbf{then}\;\mathbf{do}{}\<[E]%
+\\
+\>[9]{}\hsindent{2}{}\<[11]%
+\>[11]{}\Varid{return}\;\text{\tt \char34 even\char34}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\mathbf{else}\mathbin{...}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+On the right we need to graft twice. So we get
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{9}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{13}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{s}\leftarrow \Varid{get}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mathbf{if}\;\Varid{even}\;\Varid{s}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\mathbf{then}\;\mathbf{do}{}\<[E]%
+\\
+\>[9]{}\hsindent{4}{}\<[13]%
+\>[13]{}\Varid{return}\;\text{\tt \char34 even\char34}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\mathbf{else}\;\mathbf{do}{}\<[E]%
+\\
+\>[9]{}\hsindent{4}{}\<[13]%
+\>[13]{}\anonymous \leftarrow \Varid{put}\;(\Varid{s}\mathbin{+}\mathrm{1}){}\<[E]%
+\\
+\>[9]{}\hsindent{4}{}\<[13]%
+\>[13]{}\Varid{return}\;\text{\tt \char34 odd\char34}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+We don't care about the leaf value that \ensuremath{\Varid{put}} gives us so I stored the result in \ensuremath{\anonymous }. Haskell \ensuremath{\mathbf{do}}-notation allows us to simplify that further by simply omitting the \ensuremath{\anonymous \leftarrow }. So here is the final function to build our tree:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{9}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{13}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{ex1}\mathrel{=}\mathbf{do}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\Varid{s}\leftarrow \Varid{get}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mathbf{if}\;\Varid{even}\;\Varid{s}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\mathbf{then}\;\mathbf{do}{}\<[E]%
+\\
+\>[9]{}\hsindent{4}{}\<[13]%
+\>[13]{}\Varid{return}\;\text{\tt \char34 even\char34}{}\<[E]%
+\\
+\>[5]{}\hsindent{4}{}\<[9]%
+\>[9]{}\mathbf{else}\;\mathbf{do}{}\<[E]%
+\\
+\>[9]{}\hsindent{4}{}\<[13]%
+\>[13]{}\Varid{put}\;(\Varid{s}\mathbin{+}\mathrm{1}){}\<[E]%
+\\
+\>[9]{}\hsindent{4}{}\<[13]%
+\>[13]{}\Varid{return}\;\text{\tt \char34 odd\char34}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+Despite this code using an abstract interface to build trees, it looks remarkably like straightforward imperative code. In a sense it is - we're building an abstract syntax tree for an imperative mini-DSL inside Haskell. But this just builds a data structure. It doesn't yet do anything. The last step is to actually interpret the tree. The Haskell libraries provide a function \ensuremath{\Varid{runState}\mathbin{::}\Conid{State}\;\Varid{s}\;\Varid{a}\to \Varid{s}\to (\Varid{a},\Varid{s})} that converts one of these trees to a function that takes an initial state value as argument, and returns both the final leaf value and the final state. We can test it out:
+\begingroup\par\noindent\advance\leftskip\mathindent\(
+\begin{pboxed}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[3]{}\Varid{go1}\mathrel{=}\Varid{runState}\;\Varid{ex1}\;\mathrm{26}{}\<[E]%
+\\
+\>[3]{}\Varid{go2}\mathrel{=}\Varid{runState}\;\Varid{ex1}\;\mathrm{27}{}\<[E]%
+\ColumnHook
+\end{pboxed}
+\)\par\noindent\endgroup\resethooks
+You might think this is all inefficient, first building a tree, and then implementing it. But the same trick as with the list monad is used. The \ensuremath{\Conid{State}} type is simply a wrapper around the final type we want, \ensuremath{\Varid{s}\to (\Varid{a},\Varid{s})} and a suitable value is constructed at each graft rather than waiting for the end. Nonetheless, it's still convenient to think in terms of building trees.
+
+\section{Summary}
+Instances of type class \ensuremath{\Conid{Monad}} can be thought of as trees describing `computations'. The \ensuremath{\Conid{Monad}} interface provides a way to graft subtrees into trees. There are as many types of `computation' as there are interpreters for tree structures. In practice the interpretation is interleaved with the graft operation so that we don't have separate tree-building and interpretation phases.
+
+\section{Technical Note for the Mathematically Inclined}
+Describing monads as trees with grafting is slightly inaccurate. Apart from in the \ensuremath{\Conid{Tree}} case, in the examples above \ensuremath{\bind } doesn't just graft, it also performs a reduction operation of some sort. However, it is accurate to talk of elements of these monads as representing equivalence classes of trees. In this case \ensuremath{\bind } is grafting lowered to the space of trees modulo the equivalence.
+
+\end{document} 
